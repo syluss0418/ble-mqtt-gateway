@@ -1,0 +1,241 @@
+/*********************************************************************************
+ *      Copyright:  (C) 2025 LingYun IoT System Studio
+ *                  All rights reserved.
+ *
+ *       Filename:  mqtt_gateway.c
+ *    Description:  This file 
+ *                 
+ *        Version:  1.0.0(2025年07月30日)
+ *         Author:  Li Jiahui <2199250859@qq.com>
+ *      ChangeLog:  1, Release initial version on "2025年07月30日 11时40分22秒"
+ *                 
+ ********************************************************************************/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <json-c/json.h>
+#include <time.h>
+#include <errno.h>
+
+
+#include "mqtt_gateway.h"
+#include "ble_gateway.h"
+
+extern struct mosquitto *global_mosq;
+extern volatile int mqtt_connected_flag;
+extern volatile int keep_running;
+extern mqtt_device_config_t device_config;
+
+
+void build_huawei_property_json(char *buffer, size_t size, int hr_value, int spo2_value)
+{
+	snprintf(buffer, size,
+			"{\"services\":[{\"service_id\":\"mqtt\",\"properties\":{\"HR\":%d,\"Spo2\":%d}}]}",
+			hr_value, spo2_value);
+}
+
+
+/* ----- Mosquitto 回调函数----- */
+
+//MQTT连接回调函数
+void on_connect_cb(struct mosquitto *mosq_obj, void *userdata, int result)
+{
+	int i;
+	int	subscribe_rc;
+
+	printf("DEBUS: on_connect_cb triggered with result: %d (%s)\n", result, mosquitto_connack_string(result));
+
+	mqtt_device_config_t *cfg = (mqtt_device_config_t *)userdata;
+	if(result == 0) //if connect success
+	{
+		printf("MQTT: Connected to broker successfully.\n");
+		mqtt_connected_flag = 1;
+
+		printf("MQTT: Subscribing to topic: %s\n", cfg->subscribe_topic);
+
+
+		printf("DEBUG: Subscribe to topic Hex: ");
+		for(i = 0; cfg->subscribe_topic[i] != '\0'; i++)
+		{
+			printf("%02x ", (unsigned char)cfg->subscribe_topic[i]);
+		}
+		printf("\n");
+
+
+		//发送订阅请求到MQTT代理（Qos 1）
+		subscribe_rc = mosquitto_subscribe(mosq_obj, NULL, cfg->subscribe_topic, 1);
+		if(subscribe_rc != MOSQ_ERR_SUCCESS)
+		{
+			fprintf(stderr, "MQTT: Failed to initiate subscribe request: %s\n", mosquitto_strerror(subscribe_rc));
+		}
+		else
+		{
+			printf("MQTT: Subscribe request send successfullt to broker.\n");
+		}
+	}
+	else //if connect failure
+	{
+		fprintf(stderr, "MQTT: Connection failed: %s\n", mosquitto_connack_string(result));
+		mqtt_connected_flag = 0;
+	}
+}
+
+
+
+//MQTT消息接收回调函数（处理下行指令）
+void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosquitto_message *msg)
+{
+	char *ble_cmd_to_send = NULL; 
+
+	printf("\n--- Dwonlink message received ---\n");
+	printf("Topic: %s\n", msg->topic);
+	printf("Message: %.*s\n", msg->payloadlen, (char *)msg->payload);
+	printf("------------------------------------\n\n");
+
+
+	//如果D-Bus 系统总线连接成功,尝试将MQTT 负载转发给BLE设备
+	if(global_dbus_conn)
+	{
+		ble_cmd_to_send = (char *)malloc(msg->payloadlen + 1);
+		if(ble_cmd_to_send)
+		{
+			memcpy(ble_cmd_to_send, msg->payload, msg->payloadlen);
+			ble_cmd_to_send[msg->payloadlen] = '\0';
+
+			printf("Forwarding MQTT payload to BLE \"%s\" to %s\n", ble_cmd_to_send, WRITABLE_CHARACTERISTIC_PATH);
+			//向BLE特性写入数据
+			if(write_characteristic_value(global_dbus_conn, WRITABLE_CHARACTERISTIC_PATH, ble_cmd_to_send) < 0)
+			{
+				fprintf(stderr, "Failed to send BLE command to microcontroller.\n");
+			}
+			free(ble_cmd_to_send);
+		}
+		else
+		{
+			fprintf(stderr, "Memory allocation failed to BLE command.\n");
+		}
+	}
+	else
+	{
+		fprintf(stderr, "D-Bus connection not available for BLE write.\n");
+	}
+}
+
+
+
+//MQTT消息发布成功回调函数
+void on_publish_cb(struct mosquitto *mosq_obj, void *userdata, int mid)
+{
+	printf("MQTT: Message published successfully, Message ID: %d\n", mid);
+}
+
+
+
+//MQTT订阅回调函数
+void on_subscribe_cb(struct mosquitto *mosq_obj, void *userdata, int mid,int qos_count, const int *granted_qos)
+{
+	printf("MQTT: Topic subscribe successfully, Message ID: %d\n", mid);
+}
+
+
+
+//MQTT断开连接回调函数
+void on_disconnect_cb(struct mosquitto *mosq_obj, void *userdata, int result)
+{
+	printf("MQTT: Disconnected from broker, return code: %d\n", result);
+	mqtt_connected_flag = 0;
+}
+
+
+
+
+//下行线程：负责MQTT连接管理和下行消息处理
+//该线程会持续尝试连接MQTT代理，并在连接成功后监听下行消息
+//ps：它不负责向MQTT周期性发布数据，发布操作现在由BLE线程负责
+void *downlink_thread_func(void *arg)
+{
+	int			rc;
+	int			loop_status_initial;
+	int			loop_attemps = 0;
+	const int	MAX_LOOP_ATTEMPTS = 10; //最大尝试连接次数
+	const int	LOOP_TIMEOUT_MS = 100; //每次循环的超时时间
+
+	//检查MOsquitto 客户端实例是否已再main线程中初始化
+	if(!global_mosq)
+	{
+		fprintf(stderr, "Downlink Thread: MQTT client not initialized in main thread.\n");
+		return NULL;
+	}
+
+	printf("---Downlink Thread: MQTT communication loop ---");
+	while(keep_running)
+	{
+		//连接到MQTT Broker
+		rc = mosquitto_connect(global_mosq, device_config.host, device_config.port, device_config.keepalive_interval);
+		if(rc != MOSQ_ERR_SUCCESS)
+		{
+			fprintf(stderr, "Downlink Thread: Failed to connect to MQTT broker: %s. Retrying in 5 seconds...\n", mosquitto_strerror(rc));
+			sleep(5);
+			continue ;
+		}
+
+
+		//确保在进入主循环之前，有足够的机会让Mosquitto客户端完成连接的实际握手和初始化设置（订阅主题等）
+		do
+		{
+			loop_status_initial = mosquitto_loop(global_mosq, LOOP_TIMEOUT_MS, 1);
+			if(loop_status_initial != MOSQ_ERR_SUCCESS && loop_status_initial != MOSQ_ERR_NO_CONN)
+			{
+				fprintf(stderr, "DEBUS: Initial loop after connect encountered error: %s\n", mosquitto_strerror(loop_status_initial));
+				break; //遇到错误就退出do-while循环
+			}
+			usleep(10000);
+			loop_attemps++;
+		} while(loop_attemps < MAX_LOOP_ATTEMPTS && mqtt_connected_flag == 0 && keep_running);	//循环条件：
+																								//1、未达到最大尝试次数
+																								//2、MQTT 尚未连接成功
+																								//3、程序未被要求停止
+
+		//如果多次循环仍未连接成功，返回外层循环，重新尝试完整的连接过程
+		if(mqtt_connected_flag == 0 && keep_running)
+		{
+			fprintf(stderr, "DEBUS: Initial connection/subscription loop timed out or failed, attempting full reconnect...\n");
+			mosquitto_disconnect(global_mosq); //断开当前可能存在的半连接
+			sleep(1);
+			continue ;
+		}
+		printf("DEBUG: Finished initiao loop after connect. Continuing main loop.\n");
+
+
+		//循环处理MQTT网络事件和下行消息的持续接收
+		//存在重连机制，如果连接丢失，退出while循环重连
+		while(mqtt_connected_flag && keep_running)
+		{
+			rc = mosquitto_loop(global_mosq, 100, 1);
+			if(rc != MOSQ_ERR_SUCCESS)
+			{
+				if(rc == MOSQ_ERR_NO_CONN) //如果错误是连接丢失
+				{
+					printf("Downlink Thread: Moquitto loop reports no connection, breaking to reconnect.\n");
+					mqtt_connected_flag = 0;
+				}
+				else //其他类型的错误
+				{
+					fprintf(stderr, "Downlink Thread: Moquitto loop error: %s. Attempting to reconnect...\n", mosquitto_strerror(rc));
+					mosquitto_disconnect(global_mosq); //强制断开以触发重连
+				}
+				sleep(1);
+				break ; //退出尝试重连
+			}
+
+			usleep(10000);
+		}	
+	}
+
+	printf("Downlink Thread: Exiting...\n");
+	return NULL;
+}
+
+
