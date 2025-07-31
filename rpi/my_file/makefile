@@ -18,11 +18,11 @@ CFLAGS = -I./lib -Wall -g \
 LDLIBS = -lmosquitto -ldbus-1 -ljson-c -lpthread # 保持正确的链接顺序和库名
 
 # 定义源文件和目标文件
-SRCS = main.c src/ble_gateway.c src/mqtt_gateway.c # 假设你的源文件都在当前目录，或者你需要根据实际路径调整
+SRCS = main.c src/ble_gateway.c src/mqtt_gateway.c src/log.c
 OBJS = $(SRCS:.c=.o) # 将所有.c文件转换为.o文件
 
 # 定义可执行文件名称
-TARGET = iot_gateway # 与你原来编译成功的可执行文件名保持一致
+TARGET = iot_gateway
 
 .PHONY: all clean
 
