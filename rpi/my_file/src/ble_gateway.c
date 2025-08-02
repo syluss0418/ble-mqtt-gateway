@@ -14,6 +14,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -30,6 +31,8 @@ extern volatile int keep_running;
 extern DBusConnection *global_dbus_conn;
 extern mqtt_device_config_t device_config;
 
+extern pthread_mutex_t dbus_mutex;
+extern pthread_mutex_t mqtt_mutex;
 
 static char* get_string_from_dbus_variant(DBusMessageIter *variant_iter);
 
@@ -94,7 +97,12 @@ void handle_properties_changed(DBusMessage *msg)
 
                         // 使用 mosquitto_publish 发布 MQTT 消息
                         // 参数：mosq_obj, mid(NULL表示自动生成), 主题, 负载长度, 负载内容, QoS等级(1), Retain标志(false)
-                        rc_pub = mosquitto_publish(global_mosq, NULL, device_config.publish_topic, strlen(json_payload_buffer), json_payload_buffer, 1, false);
+                        pthread_mutex_lock(&mqtt_mutex);
+							
+						rc_pub = mosquitto_publish(global_mosq, NULL, device_config.publish_topic, strlen(json_payload_buffer), json_payload_buffer, 1, false);
+
+						pthread_mutex_unlock(&mqtt_mutex);
+
                         if (rc_pub != MOSQ_ERR_SUCCESS) { // 检查发布结果
                             fprintf(stderr, "Failed to publish MQTT message, return code %d\n", rc_pub);
                         } 
@@ -160,9 +168,14 @@ int write_characteristic_value(DBusConnection *conn, const char *char_path, cons
     dbus_message_iter_open_container(&args, DBUS_TYPE_ARRAY, "{sv}", &options_iter);
     dbus_message_iter_close_container(&args, &options_iter); // 关闭选项字典容器
 
+
+	pthread_mutex_lock(&dbus_mutex);
+
     // 同步发送消息，等待回复。-1 表示无限等待超时。
     DBusMessage* reply = dbus_connection_send_with_reply_and_block(conn, msg, -1, &err);
     dbus_message_unref(msg); // 释放发送的消息
+
+	pthread_mutex_unlock(&dbus_mutex);
 
     if (dbus_error_is_set(&err)) // 检查方法调用是否出错
     {
@@ -266,11 +279,15 @@ int call_method(DBusConnection *conn, const char *path, const char *interface, c
 		return -1;
 	}
 
+	pthread_mutex_lock(&dbus_mutex);
+
 	//向D-BUS发送消息，并阻塞等待应答（此处无限等待超时）
 	reply = dbus_connection_send_with_reply_and_block(conn, msg, -1, &err);
 
 	//释放发送的消息
 	dbus_message_unref(msg);
+
+	pthread_mutex_unlock(&dbus_mutex);
 
 	if(dbus_error_is_set(&err))
 	{
@@ -338,12 +355,15 @@ void *uplink_thread_func(void *arg)
 	//主循环，持续监听BLE通知
 	while(keep_running)
 	{
+		pthread_mutex_lock(&dbus_mutex);
+
 		//处理D-Bus I/O (接收BLE 信号和回复)
 		//100 ms 超时时间
 		dbus_connection_read_write(global_dbus_conn, 100);
 
 		//从D-BUS消息队列中弹出并处理消息
 		msg = dbus_connection_pop_message(global_dbus_conn);
+		pthread_mutex_unlock(&dbus_mutex);
 		if(msg) //如果有消息
 		{
 			// 判断消息是否是 PropertiesChanged 信号，并且路径与关注的通知特性路径匹配

@@ -38,6 +38,11 @@ volatile int mqtt_connected_flag = 0;
 //程序运行控制标志，接收到SIGNINT信号时，此标志设为0
 volatile int keep_running = 1;
 
+//互斥锁
+pthread_mutex_t	dbus_mutex;
+pthread_mutex_t	mqtt_mutex;
+
+
 
 mqtt_device_config_t device_config = {
 	.host = "5969442708.st1.iotda-device.cn-north-4.myhuaweicloud.com",
@@ -72,6 +77,9 @@ int main(int argc, char **argv)
 	srand(time(NULL));
 
 	printf("Main: Strating BLE-MQTT Gateway appliacation...\n");
+
+	pthread_mutex_init(&dbus_mutex, NULL);
+	pthread_mutex_init(&mqtt_mutex, NULL);
 
 	//step 1:初始化D-Bus连接
 	dbus_error_init(&err);
