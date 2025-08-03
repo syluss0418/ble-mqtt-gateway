@@ -22,7 +22,7 @@
 //用于启用通知的特性对象路径（ESP32->rpi）
 #define NOTIFY_CHARACTERISTIC_PATH		DEVICE_PATH "/service0028/char0037"
 //用于写入数据的特性对象路径（rpi->ESP32）
-#define WRITABLE_CHARACTERISTIC_PATH    DEVICE_PATH "/service0028/char002f"
+#define WRITABLE_CHARACTERISTIC_PATH    DEVICE_PATH "/service0028/char0035"
 
 
 extern DBusConnection *global_dbus_conn;

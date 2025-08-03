@@ -18,6 +18,7 @@
 #include <json-c/json.h>
 #include <time.h>
 #include <errno.h>
+#include <pthread.h>
 
 
 #include "mqtt_gateway.h"
@@ -27,6 +28,8 @@ extern struct mosquitto *global_mosq;
 extern volatile int mqtt_connected_flag;
 extern volatile int keep_running;
 extern mqtt_device_config_t device_config;
+
+extern pthread_mutex_t mqtt_mutex;
 
 
 void build_huawei_property_json(char *buffer, size_t size, int hr_value, int spo2_value)
@@ -88,11 +91,52 @@ void on_connect_cb(struct mosquitto *mosq_obj, void *userdata, int result)
 void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosquitto_message *msg)
 {
 	char *ble_cmd_to_send = NULL; 
+	char *request_id = NULL;
+	char response_topic[256];
+	char response_payload[128];
+	int	 rc_pub;
+
+
 
 	printf("\n--- Dwonlink message received ---\n");
 	printf("Topic: %s\n", msg->topic);
 	printf("Message: %.*s\n", msg->payloadlen, (char *)msg->payload);
 	printf("------------------------------------\n\n");
+
+    // 检查是否是命令请求主题
+    if (strstr(msg->topic, "/sys/commands/request_id=") != NULL)
+    {
+        // 提取 request_id
+        char *request_id_start = strstr(msg->topic, "request_id=");
+        if (request_id_start != NULL)
+        {
+            request_id = request_id_start + strlen("request_id=");
+            printf("DEBUG: Received command with request_id: %s\n", request_id);
+
+            // 1. 构建响应主题
+            snprintf(response_topic, sizeof(response_topic),
+                     "$oc/devices/%s/sys/commands/response/request_id=%s",
+                     device_config.username, request_id);
+
+            // 2. 构建响应负载（简单的成功响应）
+            snprintf(response_payload, sizeof(response_payload),
+                     "{\"result_code\":0}");
+
+            // 3. 发布响应消息
+            pthread_mutex_lock(&mqtt_mutex);
+            rc_pub = mosquitto_publish(mosq_obj, NULL, response_topic, strlen(response_payload), response_payload, 1, false);
+            pthread_mutex_unlock(&mqtt_mutex);
+
+            if (rc_pub != MOSQ_ERR_SUCCESS)
+            {
+                fprintf(stderr, "MQTT: Failed to publish command response: %s\n", mosquitto_strerror(rc_pub));
+            }
+            else
+            {
+                printf("MQTT: Published command response to topic: %s\n", response_topic);
+            }
+        }
+    }
 
 
 	//如果D-Bus 系统总线连接成功,尝试将MQTT 负载转发给BLE设备

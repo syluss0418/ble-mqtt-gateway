@@ -51,7 +51,8 @@ mqtt_device_config_t device_config = {
 	.username = "687ca704d582f200183d3b33_040210",
 	.password = "327d73c2c112fd381f62dcb84728873d9a3f3ef7aa96d7ed8ba7de9befba24c7",
 	.publish_topic = "$oc/devices/687ca704d582f200183d3b33_040210/sys/properties/report",
-	.subscribe_topic = "$oc/devices/687ca704d582f200183d3b33_040210/sys/messages/down",
+	.subscribe_topic = "$oc/devices/687ca704d582f200183d3b  33_040210/sys/commands/#",
+	//.subscribe_topic = "$oc/devices/687ca704d582f200183d3b33_040210/sys/messages/down",
 	.keepalive_interval = 60, //MQTT心跳间隔 60s
 	.publish_interval_sec = 5 //数据发布间隔
 };
@@ -71,6 +72,7 @@ int main(int argc, char **argv)
 	pthread_t	downlink_tid; //下行线程ID
 	DBusError	err;
 	int			rc;
+	//const char *disconnect_cmd = "+BLEDISCONN:";
 
 	signal(SIGINT, sigint_handler);
 
@@ -165,7 +167,10 @@ int main(int argc, char **argv)
     // step 6: 清理资源 (程序退出前释放所有已分配的资源)
     if (global_dbus_conn) 
 	{
-        printf("Main: Disconnecting from BLE device...\n");
+		printf("Main: Sending disconnect command to BLE device before exiting...\n");
+		// 调用写特性值的函数来发送断开连接命令
+		call_method(global_dbus_conn, DEVICE_PATH, "org.bluez.Device1", "Disconnect");        
+		printf("Main: Disconnecting from BLE device...\n");
         dbus_connection_unref(global_dbus_conn); // 释放D-Bus连接
     }
     if (global_mosq) 
