@@ -18,7 +18,7 @@ CFLAGS = -I./lib -Wall -g \
 LDLIBS = -lmosquitto -ldbus-1 -ljson-c -lpthread # 保持正确的链接顺序和库名
 
 # 定义源文件和目标文件
-SRCS = main.c src/ble_gateway.c src/mqtt_gateway.c src/log.c
+SRCS = main.c src/ble_gateway.c src/mqtt_gateway.c src/log.c src/config_parser.c
 OBJS = $(SRCS:.c=.o) # 将所有.c文件转换为.o文件
 
 # 定义可执行文件名称

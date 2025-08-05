@@ -331,7 +331,7 @@ void *uplink_thread_func(void *arg)
 
 	//step 1:连接到BLE设备
 	//通过D-Bus调用BlueZ的device1接口的Connect方法来连接指定MAC地址的BLE设备
-	printf("Uplink Thread: Connecting to Ble device %s...\n", DEVICE_MAC);
+	printf("Uplink Thread: Connecting to Ble device %s...\n", BLE_DEVICE_MAC);
 	if(call_method(global_dbus_conn, DEVICE_PATH, "org.bluez.Device1", "Connect") < 0)
 	{
 		fprintf(stderr, "Uplink Thread: Failed to connect to BLE device.\n");

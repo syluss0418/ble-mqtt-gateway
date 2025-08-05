@@ -29,7 +29,7 @@
 
 #include "ble_gateway.h"
 #include "mqtt_gateway.h"
-
+#include "config_parser.h"
 
 //D-Bus 连接对象
 DBusConnection *global_dbus_conn = NULL;
@@ -45,19 +45,17 @@ pthread_mutex_t	dbus_mutex;
 pthread_mutex_t	mqtt_mutex;
 
 
-
-mqtt_device_config_t device_config = {
-	.host = "5969442708.st1.iotda-device.cn-north-4.myhuaweicloud.com",
-	.port = 1883,
-	.client_id = "687ca704d582f200183d3b33_040210_0_0_2025072904",
-	.username = "687ca704d582f200183d3b33_040210",
-	.password = "327d73c2c112fd381f62dcb84728873d9a3f3ef7aa96d7ed8ba7de9befba24c7",
-	.publish_topic = "$oc/devices/687ca704d582f200183d3b33_040210/sys/properties/report",
-	.subscribe_topic = "$oc/devices/687ca704d582f200183d3b  33_040210/sys/commands/#",
-	//.subscribe_topic = "$oc/devices/687ca704d582f200183d3b33_040210/sys/messages/down",
-	.keepalive_interval = 60, //MQTT心跳间隔 60s
-	.publish_interval_sec = 5 //数据发布间隔
-};
+// 全局配置变量
+// MQTT 配置
+mqtt_device_config_t device_config;
+// BLE 配置
+char BLE_DEVICE_MAC[32];
+char DEVICE_PATH[256];
+char NOTIFY_CHARACTERISTIC_PATH[512];
+char WRITABLE_CHARACTERISTIC_PATH[512];
+int HR_THRESHOLD;
+int SPO2_THRESHOLD;
+char WARNING_CMD[128];
 
 
 void sigint_handler(int signum)
@@ -69,11 +67,23 @@ void sigint_handler(int signum)
 
 void print_usage(char *progname)
 {
+	printf("Usage: %s [OPTIONS]\n", progname);
+	printf("-c(--config):Specify the path to the configuration file.\n");
 	printf("-d(--daemon): Set program running on background.\n");
 	printf("-h(--help): Display this help information.\n");
 	return ;
 }
 
+//释放由strdup分配的内存
+void cleanup_config()
+{
+    free(device_config.host);
+    free(device_config.client_id);
+    free(device_config.username);
+    free(device_config.password);
+    free(device_config.publish_topic);
+    free(device_config.subscribe_topic);	
+}
 
 
 int main(int argc, char **argv)
@@ -84,9 +94,11 @@ int main(int argc, char **argv)
 	int			rc;
 	char		*progname = NULL;
 	int			daemon_run = 0; //默认非后台运行
+	char		*config_file = NULL;
 	int			ch;
 	
 	struct option opts[] = {
+		{"config", required_argument, NULL, 'c'},
 		{"daemon", no_argument, NULL, 'd'},
 		{"help", no_argument, NULL, 'h'},
 		{NULL, 0, NULL, 0}
@@ -95,10 +107,13 @@ int main(int argc, char **argv)
 
 	progname = basename(argv[0]);
 
-	while((ch = getopt_long(argc, argv, "dh", opts, NULL)) != -1)
+	while((ch = getopt_long(argc, argv, "c:dh", opts, NULL)) != -1)
 	{
 		switch(ch)
 		{
+			case 'c':
+				config_file = optarg;
+				break;
 			case 'd':
 				daemon_run = 1;
 				break;
@@ -106,9 +121,24 @@ int main(int argc, char **argv)
 				print_usage(progname);
 				return EXIT_SUCCESS;
 			default:
-				break;
+				print_usage(progname);
+				return EXIT_SUCCESS;
 
 		}
+	}
+
+	if(!config_file)
+	{
+		fprintf(stderr, "Error: Configuration file is not specified. Use -c or --config option.\n");
+		print_usage(progname);
+		return EXIT_SUCCESS;
+	}
+
+	//解析配置文件
+	if(parse_json_config(config_file) != 0)
+	{
+		fprintf(stderr, "Error: Failed to parse JSON configuration file.\n");
+		return -1;
 	}
 
 	signal(SIGINT, sigint_handler);
@@ -118,7 +148,6 @@ int main(int argc, char **argv)
 		daemon(0, 0);
 	}
 
-	srand(time(NULL));
 
 	printf("Main: Strating BLE-MQTT Gateway appliacation...\n");
 
@@ -222,7 +251,9 @@ int main(int argc, char **argv)
     }
     mosquitto_lib_cleanup(); // 清理Mosquitto库的内部资源
 
-    printf("Main: Gateway application exited.\n");
+	cleanup_config(); //释放配置文件分配的内存
+
+	printf("Main: Gateway application exited.\n");
 
     return 0; // 程序成功退出	
 }

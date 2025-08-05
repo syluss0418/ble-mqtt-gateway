@@ -4,22 +4,19 @@
 #include <mosquitto.h> // Include Mosquitto library for struct mosquitto
 #include <stddef.h>    // For size_t
 
-// Forward declarations for global variables used by mqtt_gateway.c
-// These are defined in main.c
 extern struct mosquitto *global_mosq;
 extern volatile int mqtt_connected_flag;
 extern volatile int keep_running; // For graceful shutdown
 
 // MQTT Device Configuration Structure
-// Defined in main.c and extern here for use in mqtt_gateway.c and ble_gateway.c
 typedef struct {
-    const char *host;
+    char		*host;
     int         port;
-    const char *client_id;
-    const char *username;
-    const char *password;
-    const char *publish_topic;
-    const char *subscribe_topic;
+    char		*client_id;
+    char		*username;
+    char		*password;
+    char		*publish_topic;
+    char		*subscribe_topic;
     int         keepalive_interval;
     int         publish_interval_sec;
 } mqtt_device_config_t;
