@@ -95,7 +95,12 @@ void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosq
 	char response_topic[256];
 	char response_payload[128];
 	int	 rc_pub;
-
+	const char *ble_payload_to_send = NULL;
+	size_t	ble_payload_len = 0;
+	json_object *json_obj = NULL;
+	json_object *paras_obj = NULL;
+	json_object *report_obj = NULL;
+	const char *report_value = NULL;
 
 
 	printf("\n--- Dwonlink message received ---\n");
@@ -139,14 +144,48 @@ void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosq
     }
 
 
+	/* 解析JSON （云端下发的命令） */
+	json_obj = json_tokener_parse(msg->payload);
+	if( !json_obj )
+	{
+		fprintf(stderr, "JSON parsing failed for message payload, Forwarding original payload.\n");
+		//解析失败，发送原始MQTT负载给BLE
+		ble_payload_to_send = (const char *)msg->payload;
+		ble_payload_len = msg->payloadlen;
+	}
+	else
+	{
+		if(json_object_object_get_ex(json_obj, "paras", &paras_obj) && json_object_object_get_ex(paras_obj, "report", &report_obj))
+		{
+			report_value = json_object_get_string(report_obj);
+			printf("JSON Parse: Found parse:report: %s. Using this for BLE command.\n", report_value);
+
+			//解析成功
+			ble_payload_to_send = report_value;
+			ble_payload_len = strlen(report_value);
+		}
+		else
+		{
+			//解析成功，但没有找到report字段，发送原始负载
+			fprintf(stderr, "JSON parsing successded, but 'paras.report' field not found. Forwarding original payload.\n");
+			ble_payload_to_send = (const char *)msg->payload;
+			ble_payload_len = msg->payloadlen;
+		}
+
+		json_object_put(json_obj); //释放JSON对象
+
+	}	
+
+
+
 	//如果D-Bus 系统总线连接成功,尝试将MQTT 负载转发给BLE设备
-	if(global_dbus_conn)
+	if(global_dbus_conn && ble_payload_to_send)
 	{
 		ble_cmd_to_send = (char *)malloc(msg->payloadlen + 1);
 		if(ble_cmd_to_send)
 		{
-			memcpy(ble_cmd_to_send, msg->payload, msg->payloadlen);
-			ble_cmd_to_send[msg->payloadlen] = '\0';
+			memcpy(ble_cmd_to_send, ble_payload_to_send, ble_payload_len);
+			ble_cmd_to_send[ble_payload_len] = '\0';
 
 			printf("Forwarding MQTT payload to BLE \"%s\" to %s\n", ble_cmd_to_send, WRITABLE_CHARACTERISTIC_PATH);
 			//向BLE特性写入数据
