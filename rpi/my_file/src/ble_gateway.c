@@ -90,7 +90,18 @@ void handle_properties_changed(DBusMessage *msg)
 					if(sscanf(decoded_str, "HR:%d,SpO2:%d", &hr, &spo2) == 2)
 					{
 						printf("Parsed HR: %d, Spo2: %d\n", hr, spo2);
-                        // 调用 build_huawei_property_json 函数构建符合华为云 IoTDA 格式的 JSON 字符串
+						if((hr != 0 || spo2 != 0) && (hr > HR_THRESHOLD || spo2 < SPO2_THRESHOLD || hr < 60 ))
+						{
+							printf("ALERT: HR(%d) > %d or Spo2 (%d) < %d. Sending warning command to BLE device.\n", hr, HR_THRESHOLD, spo2, SPO2_THRESHOLD);
+							//发送Waring
+							if(write_characteristic_value(global_dbus_conn, WRITABLE_CHARACTERISTIC_PATH, WARNING_CMD) < 0)
+							{
+								fprintf(stderr, "Failed to send WARING command to BLE device.\n");
+							}
+						}
+
+
+						// 调用 build_huawei_property_json 函数构建符合华为云 IoTDA 格式的 JSON 字符串
                         build_huawei_property_json(json_payload_buffer, sizeof(json_payload_buffer), hr, spo2);
 
                         printf("Publishing MQTT payload: %s\n", json_payload_buffer);

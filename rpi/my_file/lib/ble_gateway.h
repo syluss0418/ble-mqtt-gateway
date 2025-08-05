@@ -24,6 +24,10 @@
 //用于写入数据的特性对象路径（rpi->ESP32）
 #define WRITABLE_CHARACTERISTIC_PATH    DEVICE_PATH "/service0028/char0035"
 
+#define HR_THRESHOLD	120 //心率警告阈值
+#define SPO2_THRESHOLD	90  //血氧警告阈值
+
+#define WARNING_CMD		"Warning"
 
 extern DBusConnection *global_dbus_conn;
 extern struct mosquitto *global_mosq;

@@ -19,7 +19,9 @@
 #include <pthread.h>
 #include <time.h>
 #include <errno.h>
+#include <getopt.h>
 #include <signal.h>
+#include <libgen.h>
 
 #include <dbus/dbus.h>
 #include <mosquitto.h>
@@ -65,6 +67,14 @@ void sigint_handler(int signum)
 }
 
 
+void print_usage(char *progname)
+{
+	printf("-d(--daemon): Set program running on background.\n");
+	printf("-h(--help): Display this help information.\n");
+	return ;
+}
+
+
 
 int main(int argc, char **argv)
 {
@@ -72,9 +82,41 @@ int main(int argc, char **argv)
 	pthread_t	downlink_tid; //下行线程ID
 	DBusError	err;
 	int			rc;
-	//const char *disconnect_cmd = "+BLEDISCONN:";
+	char		*progname = NULL;
+	int			daemon_run = 0; //默认非后台运行
+	int			ch;
+	
+	struct option opts[] = {
+		{"daemon", no_argument, NULL, 'd'},
+		{"help", no_argument, NULL, 'h'},
+		{NULL, 0, NULL, 0}
+	};
+
+
+	progname = basename(argv[0]);
+
+	while((ch = getopt_long(argc, argv, "dh", opts, NULL)) != -1)
+	{
+		switch(ch)
+		{
+			case 'd':
+				daemon_run = 1;
+				break;
+			case 'h':
+				print_usage(progname);
+				return EXIT_SUCCESS;
+			default:
+				break;
+
+		}
+	}
 
 	signal(SIGINT, sigint_handler);
+
+	if(daemon_run)
+	{
+		daemon(0, 0);
+	}
 
 	srand(time(NULL));
 
