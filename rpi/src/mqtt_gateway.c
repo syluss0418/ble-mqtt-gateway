@@ -20,9 +20,10 @@
 #include <errno.h>
 #include <pthread.h>
 
-
 #include "mqtt_gateway.h"
 #include "ble_gateway.h"
+#include "log.h"
+
 
 extern struct mosquitto *global_mosq;
 extern volatile int mqtt_connected_flag;
@@ -45,27 +46,29 @@ void build_huawei_property_json(char *buffer, size_t size, int hr_value, int spo
 //MQTT连接回调函数
 void on_connect_cb(struct mosquitto *mosq_obj, void *userdata, int result)
 {
-	int i;
-	int	subscribe_rc;
+	int		i;
+	int		subscribe_rc;
+	char	hex_buffer[512];
+	int		buffer_index = 0;
 
-	printf("DEBUS: on_connect_cb triggered with result: %d (%s)\n", result, mosquitto_connack_string(result));
+	log_debug("DEBUS: on_connect_cb triggered with result: %d (%s)\n", result, mosquitto_connack_string(result));
 
 	mqtt_device_config_t *cfg = (mqtt_device_config_t *)userdata;
 	if(result == 0) //if connect success
 	{
-		printf("MQTT: Connected to broker successfully.\n");
+		log_info("MQTT: Connected to broker successfully.\n");
 		mqtt_connected_flag = 1;
 
-		printf("MQTT: Subscribing to topic: %s\n", cfg->subscribe_topic);
+		log_info("MQTT: Subscribing to topic: %s\n", cfg->subscribe_topic);
 
 
-		printf("DEBUG: Subscribe to topic Hex: ");
-		for(i = 0; cfg->subscribe_topic[i] != '\0'; i++)
+		log_debug("DEBUG: Subscribe to topic Hex: ");
+		for(i = 0; cfg->subscribe_topic[i] != '\0' && buffer_index < sizeof(hex_buffer) - 3; i++)
 		{
-			printf("%02x ", (unsigned char)cfg->subscribe_topic[i]);
+			buffer_index += snprintf(&hex_buffer[buffer_index], sizeof(hex_buffer) - buffer_index, "%02x ", (unsigned char)cfg->subscribe_topic[i]);
 		}
-		printf("\n");
-
+		hex_buffer[buffer_index] = '\0';
+		log_debug("%s\n", hex_buffer);
 
 		//发送订阅请求到MQTT代理（Qos 1）
 		subscribe_rc = mosquitto_subscribe(mosq_obj, NULL, cfg->subscribe_topic, 1);
@@ -75,7 +78,7 @@ void on_connect_cb(struct mosquitto *mosq_obj, void *userdata, int result)
 		}
 		else
 		{
-			printf("MQTT: Subscribe request send successfullt to broker.\n");
+			log_info("MQTT: Subscribe request send successfullt to broker.\n");
 		}
 	}
 	else //if connect failure
@@ -103,10 +106,10 @@ void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosq
 	const char *report_value = NULL;
 
 
-	printf("\n--- Dwonlink message received ---\n");
-	printf("Topic: %s\n", msg->topic);
-	printf("Message: %.*s\n", msg->payloadlen, (char *)msg->payload);
-	printf("------------------------------------\n\n");
+	log_info("\n--- Dwonlink message received ---\n");
+	log_info("Topic: %s\n", msg->topic);
+	log_info("Message: %.*s\n", msg->payloadlen, (char *)msg->payload);
+	log_info("------------------------------------\n\n");
 
     // 检查是否是命令请求主题
     if (strstr(msg->topic, "/sys/commands/request_id=") != NULL)
@@ -116,7 +119,7 @@ void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosq
         if (request_id_start != NULL)
         {
             request_id = request_id_start + strlen("request_id=");
-            printf("DEBUG: Received command with request_id: %s\n", request_id);
+            log_debug("DEBUG: Received command with request_id: %s\n", request_id);
 
             // 1. 构建响应主题
             snprintf(response_topic, sizeof(response_topic),
@@ -138,7 +141,7 @@ void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosq
             }
             else
             {
-                printf("MQTT: Published command response to topic: %s\n", response_topic);
+                log_info("MQTT: Published command response to topic: %s\n", response_topic);
             }
         }
     }
@@ -158,7 +161,7 @@ void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosq
 		if(json_object_object_get_ex(json_obj, "paras", &paras_obj) && json_object_object_get_ex(paras_obj, "report", &report_obj))
 		{
 			report_value = json_object_get_string(report_obj);
-			printf("JSON Parse: Found parse:report: %s. Using this for BLE command.\n", report_value);
+			log_debug("JSON Parse: Found parse:report: %s. Using this for BLE command.\n", report_value);
 
 			//解析成功
 			ble_payload_to_send = report_value;
@@ -187,7 +190,7 @@ void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosq
 			memcpy(ble_cmd_to_send, ble_payload_to_send, ble_payload_len);
 			ble_cmd_to_send[ble_payload_len] = '\0';
 
-			printf("Forwarding MQTT payload to BLE \"%s\" to %s\n", ble_cmd_to_send, WRITABLE_CHARACTERISTIC_PATH);
+			log_info("Forwarding MQTT payload to BLE \"%s\" to %s\n", ble_cmd_to_send, WRITABLE_CHARACTERISTIC_PATH);
 			//向BLE特性写入数据
 			if(write_characteristic_value(global_dbus_conn, WRITABLE_CHARACTERISTIC_PATH, ble_cmd_to_send) < 0)
 			{
@@ -211,7 +214,7 @@ void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosq
 //MQTT消息发布成功回调函数
 void on_publish_cb(struct mosquitto *mosq_obj, void *userdata, int mid)
 {
-	printf("MQTT: Message published successfully, Message ID: %d\n", mid);
+	log_info("MQTT: Message published successfully, Message ID: %d\n", mid);
 }
 
 
@@ -219,7 +222,7 @@ void on_publish_cb(struct mosquitto *mosq_obj, void *userdata, int mid)
 //MQTT订阅回调函数
 void on_subscribe_cb(struct mosquitto *mosq_obj, void *userdata, int mid,int qos_count, const int *granted_qos)
 {
-	printf("MQTT: Topic subscribe successfully, Message ID: %d\n", mid);
+	log_info("MQTT: Topic subscribe successfully, Message ID: %d\n", mid);
 }
 
 
@@ -227,7 +230,7 @@ void on_subscribe_cb(struct mosquitto *mosq_obj, void *userdata, int mid,int qos
 //MQTT断开连接回调函数
 void on_disconnect_cb(struct mosquitto *mosq_obj, void *userdata, int result)
 {
-	printf("MQTT: Disconnected from broker, return code: %d\n", result);
+	log_info("MQTT: Disconnected from broker, return code: %d\n", result);
 	mqtt_connected_flag = 0;
 }
 
@@ -252,7 +255,7 @@ void *downlink_thread_func(void *arg)
 		return NULL;
 	}
 
-	printf("---Downlink Thread: MQTT communication loop ---");
+	log_info("---Downlink Thread: MQTT communication loop ---");
 	while(keep_running)
 	{
 		//连接到MQTT Broker
@@ -289,7 +292,7 @@ void *downlink_thread_func(void *arg)
 			sleep(1);
 			continue ;
 		}
-		printf("DEBUG: Finished initiao loop after connect. Continuing main loop.\n");
+		log_debug("DEBUG: Finished initiao loop after connect. Continuing main loop.\n");
 
 
 		//循环处理MQTT网络事件和下行消息的持续接收
@@ -301,7 +304,7 @@ void *downlink_thread_func(void *arg)
 			{
 				if(rc == MOSQ_ERR_NO_CONN) //如果错误是连接丢失
 				{
-					printf("Downlink Thread: Moquitto loop reports no connection, breaking to reconnect.\n");
+					log_debug("Downlink Thread: Moquitto loop reports no connection, breaking to reconnect.\n");
 					mqtt_connected_flag = 0;
 				}
 				else //其他类型的错误
@@ -317,7 +320,7 @@ void *downlink_thread_func(void *arg)
 		}	
 	}
 
-	printf("Downlink Thread: Exiting...\n");
+	log_info("Downlink Thread: Exiting...\n");
 	return NULL;
 }
 

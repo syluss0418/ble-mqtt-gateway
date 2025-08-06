@@ -30,6 +30,7 @@
 #include "ble_gateway.h"
 #include "mqtt_gateway.h"
 #include "config_parser.h"
+#include "log.h"
 
 //D-Bus 连接对象
 DBusConnection *global_dbus_conn = NULL;
@@ -70,6 +71,7 @@ void print_usage(char *progname)
 	printf("Usage: %s [OPTIONS]\n", progname);
 	printf("-c(--config):Specify the path to the configuration file.\n");
 	printf("-d(--daemon): Set program running on background.\n");
+	printf("-l(--log): Set program to verbose output mode (print logs to stdout).\n");
 	printf("-h(--help): Display this help information.\n");
 	return ;
 }
@@ -95,11 +97,15 @@ int main(int argc, char **argv)
 	char		*progname = NULL;
 	int			daemon_run = 0; //默认非后台运行
 	char		*config_file = NULL;
+	char		*log_file = "test.log";
+	int			log_size = 1024;
+	int			log_level = LOG_LEVEL_DEBUG;
 	int			ch;
 	
 	struct option opts[] = {
 		{"config", required_argument, NULL, 'c'},
 		{"daemon", no_argument, NULL, 'd'},
+		{"log", no_argument, NULL, 'l'},
 		{"help", no_argument, NULL, 'h'},
 		{NULL, 0, NULL, 0}
 	};
@@ -107,7 +113,7 @@ int main(int argc, char **argv)
 
 	progname = basename(argv[0]);
 
-	while((ch = getopt_long(argc, argv, "c:dh", opts, NULL)) != -1)
+	while((ch = getopt_long(argc, argv, "c:dlh", opts, NULL)) != -1)
 	{
 		switch(ch)
 		{
@@ -116,6 +122,10 @@ int main(int argc, char **argv)
 				break;
 			case 'd':
 				daemon_run = 1;
+				break;
+			case 'l':
+				log_file = "console";
+				log_level = LOG_LEVEL_DEBUG;
 				break;
 			case 'h':
 				print_usage(progname);
@@ -126,6 +136,8 @@ int main(int argc, char **argv)
 
 		}
 	}
+
+	log_open(log_file, log_level, log_size, LOG_LOCK_DISABLE);
 
 	if(!config_file)
 	{
@@ -149,7 +161,7 @@ int main(int argc, char **argv)
 	}
 
 
-	printf("Main: Strating BLE-MQTT Gateway appliacation...\n");
+	log_info("Main: Strating BLE-MQTT Gateway appliacation...\n");
 
 	pthread_mutex_init(&dbus_mutex, NULL);
 	pthread_mutex_init(&mqtt_mutex, NULL);
@@ -164,12 +176,12 @@ int main(int argc, char **argv)
 		dbus_error_free(&err);
 		return -1;
 	}
-	printf("Main: D-Bus system bus connected.\n");
+	log_info("Main: D-Bus system bus connected.\n");
 
 
 	//step 2:初始化mosquitto 库和客户端实例
 	mosquitto_lib_init();
-	printf("Main: Mosquitto library initialized.\n");
+	log_info("Main: Mosquitto library initialized.\n");
 
 
 	global_mosq = mosquitto_new(device_config.client_id, true, (void *)&device_config);
@@ -180,7 +192,7 @@ int main(int argc, char **argv)
 		mosquitto_lib_cleanup();
 		return -2;
 	}
-	printf("Main: Mosquitto client instance created with Client ID: %s\n", device_config.client_id);
+	log_info("Main: Mosquitto client instance created with Client ID: %s\n", device_config.client_id);
 
 	
     // 设置所有 MQTT 回调函数
@@ -212,7 +224,7 @@ int main(int argc, char **argv)
         mosquitto_lib_cleanup();
         return 1;
     }
-    printf("Main: Uplink thread created.\n");
+    log_debug("Main: Uplink thread created.\n");
 
     // step 4: 创建下行线程 (MQTT 订阅 -> BLE 写入)
     // 创建一个新线程，执行downlink_thread_func函数，不传递任何参数
@@ -225,23 +237,23 @@ int main(int argc, char **argv)
         mosquitto_lib_cleanup();
         return 1;
     }
-    printf("Main: Downlink thread created.\n");
+    log_debug("Main: Downlink thread created.\n");
 
-    printf("Main: Gateway application is running. Press Ctrl+C to exit.\n");
+    log_info("Main: Gateway application is running. Press Ctrl+C to exit.\n");
 
     // step 5: 等待线程完成 (主线程等待上行和下行线程执行完毕)
     pthread_join(uplink_tid, NULL);   // 等待上行线程结束
     pthread_join(downlink_tid, NULL); // 等待下行线程结束
 
-    printf("Main: Received exit signal, cleaning up resources...\n");
+    log_info("Main: Received exit signal, cleaning up resources...\n");
 
     // step 6: 清理资源 (程序退出前释放所有已分配的资源)
     if (global_dbus_conn) 
 	{
-		printf("Main: Sending disconnect command to BLE device before exiting...\n");
+		log_info("Main: Sending disconnect command to BLE device before exiting...\n");
 		// 调用写特性值的函数来发送断开连接命令
 		call_method(global_dbus_conn, DEVICE_PATH, "org.bluez.Device1", "Disconnect");        
-		printf("Main: Disconnecting from BLE device...\n");
+		log_info("Main: Disconnecting from BLE device...\n");
         dbus_connection_unref(global_dbus_conn); // 释放D-Bus连接
     }
     if (global_mosq) 
@@ -253,7 +265,7 @@ int main(int argc, char **argv)
 
 	cleanup_config(); //释放配置文件分配的内存
 
-	printf("Main: Gateway application exited.\n");
+	log_info("Main: Gateway application exited.\n");
 
     return 0; // 程序成功退出	
 }

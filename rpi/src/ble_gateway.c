@@ -23,6 +23,7 @@
 
 #include "mqtt_gateway.h"
 #include "ble_gateway.h"
+#include "log.h"
 
 
 extern struct mosquitto *global_mosq;
@@ -75,7 +76,7 @@ void handle_properties_changed(DBusMessage *msg)
 			dbus_message_iter_next(&entry);
 			dbus_message_iter_recurse(&entry, &variant_iter);
 
-			printf("---Notification received from %s---\n", dbus_message_get_path(msg));
+			log_info("---Notification received from %s---\n", dbus_message_get_path(msg));
 			print_notify_value(&variant_iter); //打印通知的原始值
 
 			//将接收道德通知数据通过MQTT发布到华为云
@@ -89,10 +90,10 @@ void handle_properties_changed(DBusMessage *msg)
 					
 					if(sscanf(decoded_str, "HR:%d,SpO2:%d", &hr, &spo2) == 2)
 					{
-						printf("Parsed HR: %d, Spo2: %d\n", hr, spo2);
+						log_info("Parsed HR: %d, Spo2: %d\n", hr, spo2);
 						if((hr != 0 || spo2 != 0) && (hr > HR_THRESHOLD || spo2 < SPO2_THRESHOLD || hr < 60 ))
 						{
-							printf("ALERT: HR(%d) > %d or Spo2 (%d) < %d. Sending warning command to BLE device.\n", hr, HR_THRESHOLD, spo2, SPO2_THRESHOLD);
+							log_info("ALERT: HR(%d) > %d or Spo2 (%d) < %d. Sending warning command to BLE device.\n", hr, HR_THRESHOLD, spo2, SPO2_THRESHOLD);
 							//发送Waring
 							if(write_characteristic_value(global_dbus_conn, WRITABLE_CHARACTERISTIC_PATH, WARNING_CMD) < 0)
 							{
@@ -104,7 +105,7 @@ void handle_properties_changed(DBusMessage *msg)
 						// 调用 build_huawei_property_json 函数构建符合华为云 IoTDA 格式的 JSON 字符串
                         build_huawei_property_json(json_payload_buffer, sizeof(json_payload_buffer), hr, spo2);
 
-                        printf("Publishing MQTT payload: %s\n", json_payload_buffer);
+                        log_info("Publishing MQTT payload: %s\n", json_payload_buffer);
 
                         // 使用 mosquitto_publish 发布 MQTT 消息
                         // 参数：mosq_obj, mid(NULL表示自动生成), 主题, 负载长度, 负载内容, QoS等级(1), Retain标志(false)
@@ -119,7 +120,7 @@ void handle_properties_changed(DBusMessage *msg)
                         } 
 						else 
 						{
-                            printf("MQTT message published successfully.\n");
+                            log_info("MQTT message published successfully.\n");
                         }		
 					}
 					else
@@ -133,7 +134,7 @@ void handle_properties_changed(DBusMessage *msg)
 					fprintf(stderr, "Failed to get decoded string from D-Bus variant.\n");
 				}
 			}
-			printf("-----------------------------------\n");
+			log_info("-----------------------------------\n");
 		}
 		dbus_message_iter_next(&changed_props); //移动到字典中的下一个键值对
 	}
@@ -195,7 +196,7 @@ int write_characteristic_value(DBusConnection *conn, const char *char_path, cons
         return -1; 
     }
 
-    printf("Successfully sent: \"%s\" to %s\n", cmd_str, char_path);
+    log_info("Successfully sent: \"%s\" to %s\n", cmd_str, char_path);
     if (reply) { // 如果收到回复消息
         dbus_message_unref(reply); // 释放回复消息对象
     }
@@ -246,13 +247,15 @@ static char* get_string_from_dbus_variant(DBusMessageIter *variant_iter)
 //打印接收到的通知值
 void print_notify_value(DBusMessageIter *variant_iter)
 {
+	char	buffer[256];
+	int		index = 0;
+
 	DBusMessageIter array_iter; // 用于遍历字节数组的迭代器
 	// 递归进入变体，获取内部的数组迭代器
 	
 	dbus_message_iter_recurse(variant_iter, &array_iter);
 
     // 转换为字符串打印
-    printf("Decoded string: \"");
     dbus_message_iter_recurse(variant_iter, &array_iter); // 重新初始化迭代器，以便再次遍历
     while (dbus_message_iter_get_arg_type(&array_iter) != DBUS_TYPE_INVALID)
     {
@@ -261,15 +264,19 @@ void print_notify_value(DBusMessageIter *variant_iter)
         // 判断是否是可打印的 ASCII 字符 (从空格到波浪线)
         if (byte_val >= 32 && byte_val <= 126)
         {
-            printf("%c", (char)byte_val); // 打印字符
+			if(index < sizeof(buffer) - 1)
+				buffer[index++] = (char)byte_val;
         }
         else
         {
-            printf("."); // 非可打印字符用点代替
+			if(index < sizeof(buffer) - 1)
+				buffer[index++] = '.'; //非可打印字符用点代替
         }
         dbus_message_iter_next(&array_iter); // 移动到下一个字节
     }
-    printf("\"\n"); // 修正：添加结束引号	
+	buffer[index] = '\0';
+
+	log_info("Decoded string: \"%s\"\n", buffer);
 }
 
 
@@ -326,18 +333,18 @@ void *uplink_thread_func(void *arg)
 
 	dbus_error_init(&err);
 
-	printf("Uplink Thread: Starting BLE operations...\n");
+	log_info("Uplink Thread: Starting BLE operations...\n");
 
 
 	//step 1:连接到BLE设备
 	//通过D-Bus调用BlueZ的device1接口的Connect方法来连接指定MAC地址的BLE设备
-	printf("Uplink Thread: Connecting to Ble device %s...\n", BLE_DEVICE_MAC);
+	log_info("Uplink Thread: Connecting to Ble device %s...\n", BLE_DEVICE_MAC);
 	if(call_method(global_dbus_conn, DEVICE_PATH, "org.bluez.Device1", "Connect") < 0)
 	{
 		fprintf(stderr, "Uplink Thread: Failed to connect to BLE device.\n");
 		return NULL;
 	}
-	printf("Uplink Thread: Successfully connected to BLE devices.\n");
+	log_info("Uplink Thread: Successfully connected to BLE devices.\n");
 
 
 	//step 2:启用特性通知
@@ -360,7 +367,7 @@ void *uplink_thread_func(void *arg)
 		return NULL;
 	}
 	dbus_connection_flush(global_dbus_conn); //刷新D-BUS连接，确保规则立即生效
-	printf("Uplink Thread: D-Bus signal match rule added for notification.\n");
+	log_debug("Uplink Thread: D-Bus signal match rule added for notification.\n");
 
 
 	//主循环，持续监听BLE通知
@@ -390,7 +397,7 @@ void *uplink_thread_func(void *arg)
 		usleep(100000);
 	}
 
-	printf("Uplink Thread: Exiting...\n");
+	log_info("Uplink Thread: Exiting...\n");
 	return NULL;
 }
 
