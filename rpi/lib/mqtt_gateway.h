@@ -19,7 +19,10 @@ typedef struct {
     char		*subscribe_topic;
     int         keepalive_interval;
     int         publish_interval_sec;
+
+	char		*ca_cert;
 } mqtt_device_config_t;
+
 
 extern mqtt_device_config_t device_config;
 

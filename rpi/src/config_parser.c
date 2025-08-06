@@ -76,6 +76,8 @@ int parse_json_config(const char *filename)
 		device_config.subscribe_topic = strdup(get_json_string(mqtt_config, "subscribe_topic"));
 		device_config.keepalive_interval = get_json_int(mqtt_config, "keepalive_interval");
 		device_config.publish_interval_sec = get_json_int(mqtt_config, "publish_interval_sec");
+		
+		device_config.ca_cert = strdup(get_json_string(mqtt_config, "ca_cert"));
 	}
 	else //找不到mqtt_config，清理资源并返回
 	{ 

@@ -213,6 +213,25 @@ int main(int argc, char **argv)
         return 1; 
     }
 
+	//使用TLS/SSL加密连接
+	if(device_config.ca_cert)
+	{
+		rc = mosquitto_tls_set(global_mosq,
+								device_config.ca_cert,
+								NULL, //client_cert_path
+								NULL, //client_key_path
+								NULL, //psk
+								NULL); //psk_identify
+	
+		if(rc != MOSQ_ERR_SUCCESS)
+		{
+			fprintf(stderr, "Main: Failed to set TLS options: %s\n", mosquitto_strerror(errno));
+			mosquitto_destroy(global_mosq);
+			mosquitto_lib_cleanup();
+			return 1;
+		}
+	}
+
 
     // step 3:创建上行线程 (BLE 通知 -> MQTT 发布)
     // 创建一个新线程，执行uplink_thread_func函数，不传递任何参数
