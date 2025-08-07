@@ -97,9 +97,9 @@ int main(int argc, char **argv)
 	char		*progname = NULL;
 	int			daemon_run = 0; //默认非后台运行
 	char		*config_file = NULL;
-	char		*log_file = "test.log";
+	char		*log_file = NULL;
 	int			log_size = 1024;
-	int			log_level = LOG_LEVEL_DEBUG;
+	int			log_level = LOG_LEVEL_INFO;
 	int			ch;
 	
 	struct option opts[] = {
@@ -124,7 +124,7 @@ int main(int argc, char **argv)
 				daemon_run = 1;
 				break;
 			case 'l':
-				log_file = "console";
+				log_file = NULL;
 				log_level = LOG_LEVEL_DEBUG;
 				break;
 			case 'h':
@@ -136,6 +136,13 @@ int main(int argc, char **argv)
 
 		}
 	}
+
+	if(daemon_run)
+	{
+		log_file = "test.log";
+		log_level = LOG_LEVEL_INFO;
+	}
+
 
 	log_open(log_file, log_level, log_size, LOG_LOCK_DISABLE);
 
