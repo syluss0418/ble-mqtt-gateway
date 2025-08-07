@@ -61,18 +61,18 @@ char WARNING_CMD[128];
 
 void sigint_handler(int signum)
 {
-	printf("\nCaptured SIGINT signal (%d). Setting exit flag for graceful shutdown...\n", signum);
+	log_debug("\nCaptured SIGINT signal (%d). Setting exit flag for graceful shutdown...\n", signum);
 	keep_running = 0;
 }
 
 
 void print_usage(char *progname)
 {
-	printf("Usage: %s [OPTIONS]\n", progname);
-	printf("-c(--config):Specify the path to the configuration file.\n");
-	printf("-d(--daemon): Set program running on background.\n");
-	printf("-l(--log): Set program to verbose output mode (print logs to stdout).\n");
-	printf("-h(--help): Display this help information.\n");
+	log_info("Usage: %s [OPTIONS]\n", progname);
+	log_info("-c(--config):Specify the path to the configuration file.\n");
+	log_info("-d(--daemon): Set program running on background.\n");
+	log_info("-l(--log): Set program to verbose output mode (print logs to stdout).\n");
+	log_info("-h(--help): Display this help information.\n");
 	return ;
 }
 
@@ -141,7 +141,7 @@ int main(int argc, char **argv)
 
 	if(!config_file)
 	{
-		fprintf(stderr, "Error: Configuration file is not specified. Use -c or --config option.\n");
+		log_error("Error: Configuration file is not specified. Use -c or --config option.\n");
 		print_usage(progname);
 		return EXIT_SUCCESS;
 	}
@@ -149,7 +149,7 @@ int main(int argc, char **argv)
 	//解析配置文件
 	if(parse_json_config(config_file) != 0)
 	{
-		fprintf(stderr, "Error: Failed to parse JSON configuration file.\n");
+		log_error("Error: Failed to parse JSON configuration file.\n");
 		return -1;
 	}
 
@@ -172,7 +172,7 @@ int main(int argc, char **argv)
 	global_dbus_conn = dbus_bus_get(DBUS_BUS_SYSTEM, &err);
 	if(dbus_error_is_set(&err))
 	{
-		fprintf(stderr, "Main: Initial D-Bus connection error: %s\n", err.message);
+		log_error("Main: Initial D-Bus connection error: %s\n", err.message);
 		dbus_error_free(&err);
 		return -1;
 	}
@@ -187,7 +187,7 @@ int main(int argc, char **argv)
 	global_mosq = mosquitto_new(device_config.client_id, true, (void *)&device_config);
 	if(!global_mosq)
 	{
-		fprintf(stderr, "Main: Failed to create Mosquitto instance: %s\n", strerror(errno));
+		log_error("Main: Failed to create Mosquitto instance: %s\n", strerror(errno));
 		dbus_connection_unref(global_dbus_conn); //释放D-BUS连接
 		mosquitto_lib_cleanup();
 		return -2;
@@ -206,7 +206,7 @@ int main(int argc, char **argv)
     rc = mosquitto_username_pw_set(global_mosq, device_config.username, device_config.password);
     if (rc != MOSQ_ERR_SUCCESS) 
 	{
-        fprintf(stderr, "Main: Failed to set username/password: %s\n", mosquitto_strerror(rc));
+        log_error("Main: Failed to set username/password: %s\n", mosquitto_strerror(rc));
         mosquitto_destroy(global_mosq); // 销毁Mosquitto实例
         dbus_connection_unref(global_dbus_conn); // 释放D-Bus连接
         mosquitto_lib_cleanup(); // 清理Mosquitto库
@@ -225,7 +225,7 @@ int main(int argc, char **argv)
 	
 		if(rc != MOSQ_ERR_SUCCESS)
 		{
-			fprintf(stderr, "Main: Failed to set TLS options: %s\n", mosquitto_strerror(errno));
+			log_error("Main: Failed to set TLS options: %s\n", mosquitto_strerror(errno));
 			mosquitto_destroy(global_mosq);
 			mosquitto_lib_cleanup();
 			return 1;
@@ -237,7 +237,7 @@ int main(int argc, char **argv)
     // 创建一个新线程，执行uplink_thread_func函数，不传递任何参数
     if (pthread_create(&uplink_tid, NULL, uplink_thread_func, NULL) != 0) 
 	{
-        fprintf(stderr, "Main: Failed to create uplink thread.\n");
+        log_error("Main: Failed to create uplink thread.\n");
         mosquitto_destroy(global_mosq);
         dbus_connection_unref(global_dbus_conn);
         mosquitto_lib_cleanup();
@@ -249,7 +249,7 @@ int main(int argc, char **argv)
     // 创建一个新线程，执行downlink_thread_func函数，不传递任何参数
     if (pthread_create(&downlink_tid, NULL, downlink_thread_func, NULL) != 0) 
 	{
-        fprintf(stderr, "Main: Failed to create downlink thread.\n");
+        log_error("Main: Failed to create downlink thread.\n");
         pthread_cancel(uplink_tid); // 如果下行线程创建失败，尝试取消上行线程
         mosquitto_destroy(global_mosq);
         dbus_connection_unref(global_dbus_conn);

@@ -74,7 +74,7 @@ void on_connect_cb(struct mosquitto *mosq_obj, void *userdata, int result)
 		subscribe_rc = mosquitto_subscribe(mosq_obj, NULL, cfg->subscribe_topic, 1);
 		if(subscribe_rc != MOSQ_ERR_SUCCESS)
 		{
-			fprintf(stderr, "MQTT: Failed to initiate subscribe request: %s\n", mosquitto_strerror(subscribe_rc));
+			log_error("MQTT: Failed to initiate subscribe request: %s\n", mosquitto_strerror(subscribe_rc));
 		}
 		else
 		{
@@ -83,7 +83,7 @@ void on_connect_cb(struct mosquitto *mosq_obj, void *userdata, int result)
 	}
 	else //if connect failure
 	{
-		fprintf(stderr, "MQTT: Connection failed: %s\n", mosquitto_connack_string(result));
+		log_error("MQTT: Connection failed: %s\n", mosquitto_connack_string(result));
 		mqtt_connected_flag = 0;
 	}
 }
@@ -137,7 +137,7 @@ void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosq
 
             if (rc_pub != MOSQ_ERR_SUCCESS)
             {
-                fprintf(stderr, "MQTT: Failed to publish command response: %s\n", mosquitto_strerror(rc_pub));
+                log_error("MQTT: Failed to publish command response: %s\n", mosquitto_strerror(rc_pub));
             }
             else
             {
@@ -151,7 +151,7 @@ void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosq
 	json_obj = json_tokener_parse(msg->payload);
 	if( !json_obj )
 	{
-		fprintf(stderr, "JSON parsing failed for message payload, Forwarding original payload.\n");
+		log_error("JSON parsing failed for message payload, Forwarding original payload.\n");
 		//解析失败，发送原始MQTT负载给BLE
 		ble_payload_to_send = (const char *)msg->payload;
 		ble_payload_len = msg->payloadlen;
@@ -170,7 +170,7 @@ void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosq
 		else
 		{
 			//解析成功，但没有找到report字段，发送原始负载
-			fprintf(stderr, "JSON parsing successded, but 'paras.report' field not found. Forwarding original payload.\n");
+			log_error("JSON parsing successded, but 'paras.report' field not found. Forwarding original payload.\n");
 			ble_payload_to_send = (const char *)msg->payload;
 			ble_payload_len = msg->payloadlen;
 		}
@@ -194,18 +194,18 @@ void on_message_cb(struct mosquitto *mosq_obj, void *userdata, const struct mosq
 			//向BLE特性写入数据
 			if(write_characteristic_value(global_dbus_conn, WRITABLE_CHARACTERISTIC_PATH, ble_cmd_to_send) < 0)
 			{
-				fprintf(stderr, "Failed to send BLE command to microcontroller.\n");
+				log_error("Failed to send BLE command to microcontroller.\n");
 			}
 			free(ble_cmd_to_send);
 		}
 		else
 		{
-			fprintf(stderr, "Memory allocation failed to BLE command.\n");
+			log_error("Memory allocation failed to BLE command.\n");
 		}
 	}
 	else
 	{
-		fprintf(stderr, "D-Bus connection not available for BLE write.\n");
+		log_error("D-Bus connection not available for BLE write.\n");
 	}
 }
 
@@ -251,7 +251,7 @@ void *downlink_thread_func(void *arg)
 	//检查MOsquitto 客户端实例是否已再main线程中初始化
 	if(!global_mosq)
 	{
-		fprintf(stderr, "Downlink Thread: MQTT client not initialized in main thread.\n");
+		log_error("Downlink Thread: MQTT client not initialized in main thread.\n");
 		return NULL;
 	}
 
@@ -262,7 +262,7 @@ void *downlink_thread_func(void *arg)
 		rc = mosquitto_connect(global_mosq, device_config.host, device_config.port, device_config.keepalive_interval);
 		if(rc != MOSQ_ERR_SUCCESS)
 		{
-			fprintf(stderr, "Downlink Thread: Failed to connect to MQTT broker: %s. Retrying in 5 seconds...\n", mosquitto_strerror(rc));
+			log_error("Downlink Thread: Failed to connect to MQTT broker: %s. Retrying in 5 seconds...\n", mosquitto_strerror(rc));
 			sleep(5);
 			continue ;
 		}
@@ -274,7 +274,7 @@ void *downlink_thread_func(void *arg)
 			loop_status_initial = mosquitto_loop(global_mosq, LOOP_TIMEOUT_MS, 1);
 			if(loop_status_initial != MOSQ_ERR_SUCCESS && loop_status_initial != MOSQ_ERR_NO_CONN)
 			{
-				fprintf(stderr, "DEBUS: Initial loop after connect encountered error: %s\n", mosquitto_strerror(loop_status_initial));
+				log_error("DEBUS: Initial loop after connect encountered error: %s\n", mosquitto_strerror(loop_status_initial));
 				break; //遇到错误就退出do-while循环
 			}
 			usleep(10000);
@@ -287,7 +287,7 @@ void *downlink_thread_func(void *arg)
 		//如果多次循环仍未连接成功，返回外层循环，重新尝试完整的连接过程
 		if(mqtt_connected_flag == 0 && keep_running)
 		{
-			fprintf(stderr, "DEBUS: Initial connection/subscription loop timed out or failed, attempting full reconnect...\n");
+			log_error("DEBUS: Initial connection/subscription loop timed out or failed, attempting full reconnect...\n");
 			mosquitto_disconnect(global_mosq); //断开当前可能存在的半连接
 			sleep(1);
 			continue ;
@@ -309,7 +309,7 @@ void *downlink_thread_func(void *arg)
 				}
 				else //其他类型的错误
 				{
-					fprintf(stderr, "Downlink Thread: Moquitto loop error: %s. Attempting to reconnect...\n", mosquitto_strerror(rc));
+					log_error("Downlink Thread: Moquitto loop error: %s. Attempting to reconnect...\n", mosquitto_strerror(rc));
 					mosquitto_disconnect(global_mosq); //强制断开以触发重连
 				}
 				sleep(1);

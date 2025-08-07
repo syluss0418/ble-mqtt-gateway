@@ -97,7 +97,7 @@ void handle_properties_changed(DBusMessage *msg)
 							//发送Waring
 							if(write_characteristic_value(global_dbus_conn, WRITABLE_CHARACTERISTIC_PATH, WARNING_CMD) < 0)
 							{
-								fprintf(stderr, "Failed to send WARING command to BLE device.\n");
+								log_error("Failed to send WARING command to BLE device.\n");
 							}
 						}
 
@@ -116,7 +116,7 @@ void handle_properties_changed(DBusMessage *msg)
 						pthread_mutex_unlock(&mqtt_mutex);
 
                         if (rc_pub != MOSQ_ERR_SUCCESS) { // 检查发布结果
-                            fprintf(stderr, "Failed to publish MQTT message, return code %d\n", rc_pub);
+                            log_error("Failed to publish MQTT message, return code %d\n", rc_pub);
                         } 
 						else 
 						{
@@ -125,13 +125,13 @@ void handle_properties_changed(DBusMessage *msg)
 					}
 					else
 					{
-						fprintf(stderr, "Failed to parse HR and SpO2 from notification string: \"%s\"\n", decoded_str);
+						log_error("Failed to parse HR and SpO2 from notification string: \"%s\"\n", decoded_str);
 					}
 					free(decoded_str);
 				}
 				else
 				{
-					fprintf(stderr, "Failed to get decoded string from D-Bus variant.\n");
+					log_error("Failed to get decoded string from D-Bus variant.\n");
 				}
 			}
 			log_info("-----------------------------------\n");
@@ -155,7 +155,7 @@ int write_characteristic_value(DBusConnection *conn, const char *char_path, cons
     msg = dbus_message_new_method_call(BLUEZ_BUS_NAME, char_path, "org.bluez.GattCharacteristic1", "WriteValue");
     if (!msg) // 检查消息是否成功创建
     {
-        fprintf(stderr, "Failed to create D-BUS message for writevalue.\n");
+        log_error("Failed to create D-BUS message for writevalue.\n");
         return -1;
     }
 
@@ -191,7 +191,7 @@ int write_characteristic_value(DBusConnection *conn, const char *char_path, cons
 
     if (dbus_error_is_set(&err)) // 检查方法调用是否出错
     {
-        fprintf(stderr, "WriteValue failed for %s: %s\n", char_path, err.message);
+        log_error("WriteValue failed for %s: %s\n", char_path, err.message);
         dbus_error_free(&err); // 释放错误信息
         return -1; 
     }
@@ -226,7 +226,7 @@ static char* get_string_from_dbus_variant(DBusMessageIter *variant_iter)
     // 分配内存给字符串 (+1 用于空终止符)
     str = (char*)malloc(len + 1);
     if (!str) { // 检查内存分配是否成功
-        fprintf(stderr, "Memory allocation failed for string from D-Bus variant.\n");
+        log_error("Memory allocation failed for string from D-Bus variant.\n");
         return NULL;
     }
 
@@ -293,7 +293,7 @@ int call_method(DBusConnection *conn, const char *path, const char *interface, c
 	msg = dbus_message_new_method_call(BLUEZ_BUS_NAME, path, interface, method);
 	if(!msg)
 	{
-		fprintf(stderr, "Failed to create D-BUS message for method %s.\n", method);
+		log_error("Failed to create D-BUS message for method %s.\n", method);
 		return -1;
 	}
 
@@ -309,7 +309,7 @@ int call_method(DBusConnection *conn, const char *path, const char *interface, c
 
 	if(dbus_error_is_set(&err))
 	{
-		fprintf(stderr, "D-Bus call %s on %s failed: %s\n", method, path, err.message);
+		log_error("D-Bus call %s on %s failed: %s\n", method, path, err.message);
 		dbus_error_free(&err);
 		return -2;
 	}
@@ -341,7 +341,7 @@ void *uplink_thread_func(void *arg)
 	log_info("Uplink Thread: Connecting to Ble device %s...\n", BLE_DEVICE_MAC);
 	if(call_method(global_dbus_conn, DEVICE_PATH, "org.bluez.Device1", "Connect") < 0)
 	{
-		fprintf(stderr, "Uplink Thread: Failed to connect to BLE device.\n");
+		log_error("Uplink Thread: Failed to connect to BLE device.\n");
 		return NULL;
 	}
 	log_info("Uplink Thread: Successfully connected to BLE devices.\n");
@@ -351,7 +351,7 @@ void *uplink_thread_func(void *arg)
 	//通过D-BUS 调用Bluez的GattCharacteristic1 接口的 StartNotify 方法，启用特定特征值的通知功能
 	if(call_method(global_dbus_conn, NOTIFY_CHARACTERISTIC_PATH, "org.bluez.GattCharacteristic1", "StartNotify") < 0)
 	{
-		fprintf(stderr, "Uplink Thread: Failed to enable notification.\n");
+		log_error("Uplink Thread: Failed to enable notification.\n");
 		return NULL;
 	}
 
@@ -362,7 +362,7 @@ void *uplink_thread_func(void *arg)
 	dbus_bus_add_match(global_dbus_conn, "type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged'", &err);
 	if(dbus_error_is_set(&err))
 	{
-		fprintf(stderr, "Uplink Thread: D-Bus match rule error: %s\n", err.message);
+		log_error("Uplink Thread: D-Bus match rule error: %s\n", err.message);
 		dbus_error_free(&err);
 		return NULL;
 	}
