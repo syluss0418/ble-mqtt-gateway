@@ -1,15 +1,13 @@
 /*********************************************************************************
- *      Copyright:  (C) 2025 lijiahui<2199250859@qq.com>
- *                  All rights reserved.
+ * Copyright:  (C) 2025 lijiahui<2199250859@qq.com>
+ * All rights reserved.
  *
- *       Filename:  log.c
- *    Description:  This file 
- *                 
- *        Version:  1.0.0(25/07/30)
- *         Author:  lijiahui <2199250859@qq.com>
- *      ChangeLog:  1, Release initial version on "25/07/30 8:15:24"
- *                 
- ********************************************************************************/
+ * Filename:  log.c
+ * Description:  This file 
+ * * Version:  1.0.0(25/07/30)
+ * Author:  lijiahui <2199250859@qq.com>
+ * ChangeLog:  1, Release initial version on "25/07/30 8:15:24"
+ * ********************************************************************************/
 
 
 #include <stdio.h>
@@ -23,7 +21,7 @@
 #include <sys/time.h>
 #include <pthread.h>
 
-#include <log.h>
+#include "log.h"
 
 
 //函数指针，用于日志系统的加锁和解锁
@@ -58,7 +56,7 @@ static const char *level_colors[] = {
 };
 
 
-//将当前时间格式化未字符串
+//将当前时间格式化为字符串
 static inline void time_to_str(char *buf)
 {
 	struct timeval	tv;
@@ -104,13 +102,8 @@ int log_open(char *fname, int level, int size, int lock)
 	L.size = size*1024; //设置日志文件最大大小（转换为字节）
 
 	//判断日志输出控制台/文件
-	if(!fname || strcmp(fname, "console") || strcmp(fname, "stderr"))
-	{
-		strcpy(L.file, "console");
-		L.fp = stderr;
-		L.size = 0; //因为控制台没有文件大小限制，此处不需要执行文件回滚
-	}
-	else //输出到文件
+	// 当fname不为空且不等于"console"或"stderr"时才输出到文件
+	if(fname != NULL && strcmp(fname, "console") != 0 && strcmp(fname, "stderr") != 0)
 	{
 		//追加+读写模式
 		if(!(fp = fopen(fname, "a+")))
@@ -120,6 +113,12 @@ int log_open(char *fname, int level, int size, int lock)
 		}
 		L.fp = fp;
 		strncpy(L.file, fname, sizeof(L.file)); //复制文件名
+	}
+	else //输出到控制台
+	{
+		strcpy(L.file, "console");
+		L.fp = stderr;
+		L.size = 0; //因为控制台没有文件大小限制，此处不需要执行文件回滚
 	}
 
 
@@ -282,7 +281,4 @@ void log_dump(int level, const char *prompt, char *buf, size_t len)
 			fprintf(L.fp, "%s\r\n", line); //打印整行到文件
 	}
 }
-
-
-
 
